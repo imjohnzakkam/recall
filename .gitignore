@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# recall / supermemory local state
+.supermemory/
+logs/
+*.log
+
+# OS / editor
+.DS_Store
