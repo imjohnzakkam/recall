@@ -62,8 +62,12 @@ def search(
         "limit": limit,
     }
     if exclude_session:
-        # don't return the error you're currently staring at
-        body["filters"] = {"AND": [{"key": "session", "value": exclude_session, "negate": True}]}
+        # Hide the current shell's own *failures* (don't echo the error you're staring
+        # at), but always surface resolutions — including fixes you just made this session.
+        body["filters"] = {"OR": [
+            {"key": "kind", "value": "resolution"},
+            {"key": "session", "value": exclude_session, "negate": True},
+        ]}
 
     r = requests.post(
         f"{config.BASE}{constants.SEARCH_PATH}",

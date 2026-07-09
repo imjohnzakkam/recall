@@ -13,6 +13,7 @@ dependencies = ["requests"]
 recall = "recall.cli:main"
 recall-ingest = "recall.ingest:main"
 recall-seed = "recall.seed:main"
+recall-daemon = "recall.daemon:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

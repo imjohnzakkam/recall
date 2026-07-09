@@ -25,3 +25,9 @@ DEFAULT_RERANK = False
 DREAMING_MODE = "instant"        # each command is its own unit; free locally
 MAX_ERROR_CHARS = 4000           # trailing window of scrubbed error text to keep
 MAX_COMMAND_CHARS = 500          # command string cap stored in metadata
+
+# Resolution linking (failure -> later success in the same cwd)
+STALE_SECONDS = 3600             # ignore an open failure older than this
+MAX_FIX_CANDIDATES = 20          # cap on commands remembered between fail and fix
+ERROR_SIG_CHARS = 1500           # trailing window of the error signature to store
+FIX_CMD_DELIM = " ;; "           # scalar-safe join of fix commands in metadata

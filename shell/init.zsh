@@ -1,8 +1,8 @@
 # recall — shell integration.  Source this from ~/.zshrc:
 #     source ~/Projects/recall/shell/init.zsh
 #
-# Day 1 scope: the bulletproof r() wrapper only. No ambient tee-mirror yet
-# (that's the fragile Day 2 path) — so nothing here can hang your shell.
+# Two capture paths: the always-on ambient daemon (default), and the explicit
+# r() wrapper for one-off guaranteed capture. Disable ambient with RECALL_AMBIENT=0.
 
 # --- config: RECALL_BASE / RECALL_TAG / RECALL_KEY live here ---
 [[ -f "$HOME/.recall/env" ]] && source "$HOME/.recall/env"
@@ -16,6 +16,7 @@ RECALL_BIN="${RECALL_BIN:-$HOME/miniconda3/envs/recall/bin}"
 
 # r <command...>  — run a command, capture its stderr cleanly, ingest on failure.
 # Returns the wrapped command's real exit code. Capture never blocks the shell.
+# Redundant when ambient capture is on, but always reliable.
 r() {
   local out; out=$(mktemp)
   "$@" 2> >(tee "$out" >&2); local ec=$?
@@ -23,5 +24,14 @@ r() {
   return $ec
 }
 
-# recall / recall "text" / recall me
+# recall / recall "text" / recall --run / recall me
 alias recall="$RECALL_BIN/recall"
+
+# --- ambient capture (always on) ---
+# Start one shared daemon (across all shells) and install the per-shell hooks.
+if [[ "${RECALL_AMBIENT:-1}" != "0" ]]; then
+  if ! pgrep -f "recall.daemon" >/dev/null 2>&1 && [[ -x "$RECALL_BIN/recall-daemon" ]]; then
+    "$RECALL_BIN/recall-daemon" >/dev/null 2>&1 &!
+  fi
+  source "${${(%):-%x}:A:h}/ambient.zsh"
+fi
