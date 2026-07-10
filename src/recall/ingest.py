@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 
-from . import client, config, constants, redact, render, state
+from . import client, config, constants, recipes, redact, render, state
 from .log import get_logger
 
 log = get_logger(__name__)
@@ -69,7 +69,7 @@ def ingest_resolution(
     error_sig = redact.scrub(error_sig)
     fix_commands = [redact.scrub(c) for c in fix_commands]
     content = render.resolution_content(error_sig, fix_commands, cwd=cwd)
-    return client.post_document(
+    result = client.post_document(
         content,
         metadata={
             "kind": "resolution",
@@ -81,6 +81,8 @@ def ingest_resolution(
             "fix_commands": constants.FIX_CMD_DELIM.join(fix_commands),
         },
     )
+    recipes.create(error_sig, fix_commands, cwd=cwd, source="observed")
+    return result
 
 
 def _stash_last_error(scrubbed: str) -> None:
