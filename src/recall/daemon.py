@@ -11,6 +11,10 @@ filename) so the CLI's session filter still works.
 Run it via the console script (started automatically by init.zsh):
     recall-daemon
 """
+import os
+import signal
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -21,6 +25,46 @@ log = get_logger(__name__)
 
 POLL_SECONDS = 1.0
 TAIL_LINES = 40          # keep the last N lines of a failed command's stderr
+
+
+def daemon_status() -> tuple[bool, int | None]:
+    try:
+        pid = int(config.PID_FILE.read_text().strip())
+        os.kill(pid, 0)
+        return True, pid
+    except (OSError, ValueError):
+        return False, None
+
+
+def start_daemon() -> int:
+    running, pid = daemon_status()
+    if running and pid:
+        return pid
+    config.LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = open(config.LOG_DIR / "daemon.out.log", "a")
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "recall.daemon"], stdout=log_file, stderr=log_file,
+        start_new_session=True,
+    )
+    return proc.pid
+
+
+def stop_daemon() -> bool:
+    running, pid = daemon_status()
+    if not running or not pid:
+        config.PID_FILE.unlink(missing_ok=True)
+        return False
+    os.kill(pid, signal.SIGTERM)
+    return True
+
+
+def _claim_pid() -> bool:
+    config.RECALL_DIR.mkdir(parents=True, exist_ok=True)
+    running, _ = daemon_status()
+    if running:
+        return False
+    config.PID_FILE.write_text(str(os.getpid()))
+    return True
 
 
 def _log_for(ctl: Path) -> Path:
@@ -75,6 +119,9 @@ def _to_int(s: str) -> int:
 
 
 def main() -> None:
+    if not _claim_pid():
+        log.info("ambient daemon already running")
+        return
     log.info("ambient daemon started, watching %s/session.*.ctl", config.RECALL_DIR)
     offsets: dict[Path, int] = {}     # ctl -> bytes already read
     pending: dict[Path, dict] = {}    # ctl -> the open CMD awaiting its EXIT
@@ -90,8 +137,14 @@ def main() -> None:
             for ctl in sorted(config.RECALL_DIR.glob("session.*.ctl")):
                 _drain(ctl, offsets, pending)
             time.sleep(POLL_SECONDS)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         log.info("ambient daemon stopped")
+    finally:
+        try:
+            if config.PID_FILE.read_text().strip() == str(os.getpid()):
+                config.PID_FILE.unlink()
+        except OSError:
+            pass
 
 
 def _drain(ctl: Path, offsets: dict, pending: dict) -> None:

@@ -11,6 +11,8 @@ error to ~/.recall/last_error.txt so a bare ``recall`` (no args) has something t
 This must never block or crash the shell: all network/errors are swallowed.
 """
 import hashlib
+import json
+import os
 import subprocess
 import sys
 import time
@@ -37,7 +39,8 @@ def ingest_failure(
     command: str, cwd: str, exit_code: int, err_text: str, ref: str, session: str,
 ) -> dict:
     """Render, post, and return the API response for one failed command."""
-    err = redact.scrub(err_text)[-constants.MAX_ERROR_CHARS:]
+    command = redact.scrub(command)
+    err = redact.scrub(err_text or "(command exited non-zero without captured stderr)")[-constants.MAX_ERROR_CHARS:]
     content = render.failure_content(
         command=command, cwd=cwd, exit_code=exit_code, err_text=err,
     )
@@ -63,6 +66,8 @@ def ingest_resolution(
     error_sig: str, fix_commands: list[str], cwd: str, ref: str, session: str = "",
 ) -> dict:
     """Render and post a problem -> fix resolution document."""
+    error_sig = redact.scrub(error_sig)
+    fix_commands = [redact.scrub(c) for c in fix_commands]
     content = render.resolution_content(error_sig, fix_commands, cwd=cwd)
     return client.post_document(
         content,
@@ -96,8 +101,13 @@ def process_event(
     the capture path must not break the shell.
     """
     session = session or config.SESSION
-    scrubbed = redact.scrub(err_text)[-constants.MAX_ERROR_CHARS:]
-    is_failure = exit_code != 0 and err_text.strip()
+    command = redact.scrub(command)
+    scrubbed = redact.scrub(err_text or "(command exited non-zero without captured stderr)")[-constants.MAX_ERROR_CHARS:]
+    is_failure = exit_code != 0
+
+    if _duplicate(command, cwd, exit_code, scrubbed):
+        log.info("skipped duplicate event: cwd=%s command=%r", cwd, command[:120])
+        return
 
     # stash the last error only on a real failure, so a bare `recall` right after a
     # fix passes still points at the failure, not an empty success.
@@ -139,10 +149,16 @@ def main() -> None:
 
     err_text = ""
     try:
-        with open(errfile, "r", errors="replace") as f:
-            err_text = f.read()
-    except OSError as e:
-        log.warning("could not read errfile %s: %s", errfile, e)
+        try:
+            with open(errfile, "r", errors="replace") as f:
+                err_text = f.read()
+        except OSError as e:
+            log.warning("could not read errfile %s: %s", errfile, e)
+    finally:
+        try:
+            os.unlink(errfile)
+        except OSError:
+            pass
 
     try:
         ec = int(exit_code)
@@ -150,6 +166,26 @@ def main() -> None:
         ec = 1
 
     process_event(command, cwd, ec, err_text, git_ref(cwd), config.SESSION)
+
+
+_DEDUPE_FILE = config.RECALL_DIR / "recent-event.json"
+
+
+def _duplicate(command: str, cwd: str, exit_code: int, error: str, window: int = 5) -> bool:
+    """Best-effort collapse of wrapper + ambient capture of the same command."""
+    normalized = command.removeprefix("r ").strip()
+    digest = hashlib.sha256(f"{cwd}\0{normalized}\0{exit_code}\0{error}".encode()).hexdigest()
+    now = int(time.time())
+    try:
+        config.RECALL_DIR.mkdir(parents=True, exist_ok=True)
+        old = json.loads(_DEDUPE_FILE.read_text()) if _DEDUPE_FILE.exists() else {}
+        duplicate = old.get("digest") == digest and now - int(old.get("ts", 0)) <= window
+        tmp = _DEDUPE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"digest": digest, "ts": now}))
+        os.replace(tmp, _DEDUPE_FILE)
+        return duplicate
+    except (OSError, ValueError, TypeError):
+        return False
 
 
 if __name__ == "__main__":

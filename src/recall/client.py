@@ -34,7 +34,7 @@ def post_document(
 
     r = requests.post(
         f"{config.BASE}{constants.DOCUMENTS_PATH}",
-        headers=config.HEADERS,
+        headers=config.headers(),
         json=body,
         timeout=constants.HTTP_TIMEOUT,
     )
@@ -71,7 +71,7 @@ def search(
 
     r = requests.post(
         f"{config.BASE}{constants.SEARCH_PATH}",
-        headers=config.HEADERS,
+        headers=config.headers(),
         json=body,
         timeout=constants.HTTP_TIMEOUT,
     )
@@ -89,7 +89,7 @@ def profile(q: Optional[str] = None) -> dict[str, Any]:
 
     r = requests.post(
         f"{config.BASE}{constants.PROFILE_PATH}",
-        headers=config.HEADERS,
+        headers=config.headers(),
         json=body,
         timeout=constants.HTTP_TIMEOUT,
     )

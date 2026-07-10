@@ -19,8 +19,9 @@ RECALL_BIN="${RECALL_BIN:-$HOME/miniconda3/envs/recall/bin}"
 # Redundant when ambient capture is on, but always reliable.
 r() {
   local out; out=$(mktemp)
+  local rendered="${(q)@}"
   "$@" 2> >(tee "$out" >&2); local ec=$?
-  "$RECALL_BIN/recall-ingest" "$*" "$PWD" "$ec" "$out" &!
+  "$RECALL_BIN/recall-ingest" "$rendered" "$PWD" "$ec" "$out" &!
   return $ec
 }
 
@@ -30,8 +31,8 @@ alias recall="$RECALL_BIN/recall"
 # --- ambient capture (always on) ---
 # Start one shared daemon (across all shells) and install the per-shell hooks.
 if [[ "${RECALL_AMBIENT:-1}" != "0" ]]; then
-  if ! pgrep -f "recall.daemon" >/dev/null 2>&1 && [[ -x "$RECALL_BIN/recall-daemon" ]]; then
-    "$RECALL_BIN/recall-daemon" >/dev/null 2>&1 &!
+  if [[ -x "$RECALL_BIN/recall" ]]; then
+    "$RECALL_BIN/recall" daemon start >/dev/null 2>&1
   fi
   source "${${(%):-%x}:A:h}/ambient.zsh"
 fi
