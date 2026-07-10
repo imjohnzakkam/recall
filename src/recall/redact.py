@@ -10,6 +10,10 @@ PATTERNS = [
     (re.compile(r'(?i)(api[_-]?key|secret|token|password)\s*[=:]\s*\S+'), r'\1=[REDACTED]'),
     (re.compile(r'gh[pousr]_[A-Za-z0-9]{20,}'), '[GH_TOKEN]'),
     (re.compile(r'sk-[A-Za-z0-9]{20,}'), '[SK_KEY]'),
+    (re.compile(r'(?i)(authorization\s*[:=]\s*)(?:basic|bearer)\s+\S+'), r'\1[TOKEN]'),
+    (re.compile(r'(?i)(?:https?://)([^/@:\s]+):([^/@\s]+)@'), r'https://[USER]:[PASSWORD]@'),
+    (re.compile(r'(?i)(--(?:password|token|api-key|secret)(?:=|\s+))\S+'), r'\1[REDACTED]'),
+    (re.compile(r'(?i)([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)=)\S+'), r'\1[REDACTED]'),
 ]
 
 
