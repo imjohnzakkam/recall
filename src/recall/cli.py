@@ -8,13 +8,14 @@ Modes:
 
 Every call is to localhost — kill Wi-Fi and it still works.
 """
+import json
 import os
 import re
 import subprocess
 import sys
 from typing import Any
 
-from . import client, config, constants, security, theme
+from . import client, config, constants, recipes, security, theme
 from .log import get_logger
 
 log = get_logger(__name__)
@@ -219,6 +220,54 @@ def usage() -> None:
     print("\nSetup: recall init | recall doctor | recall daemon start|stop|status")
 
 
+def apply_recipe(identifier: str) -> None:
+    recipe = recipes.get(identifier)
+    if not recipe:
+        ranked = recipes.ranked(identifier, os.getcwd())
+        recipe = ranked[0] if ranked else None
+    if not recipe:
+        raise SystemExit("recall apply: no matching local recipe")
+    print(theme.header(f"{recipe.id} · confidence {recipe.confidence:.0%}"))
+    for command in recipe.steps:
+        print("  " + theme.command(f"$ {command}"))
+    if input("Run this recipe? [y/N] ").strip().lower() != "y":
+        print("aborted."); return
+    worked = True
+    for command in recipe.steps:
+        if subprocess.run(command, shell=True).returncode:
+            worked = False; break
+    if worked and recipe.verify_command:
+        worked = subprocess.run(recipe.verify_command, shell=True).returncode == 0
+    recipes.feedback(recipe.id, worked)
+    print("✓ verified" if worked else "✗ recipe failed")
+
+
+def lifecycle(command: str, args: list[str]) -> None:
+    if not args:
+        raise SystemExit(f"recall {command}: recipe id required")
+    recipe_id = args[0]
+    if command in {"useful", "wrong"}:
+        recipe = recipes.feedback(recipe_id, command == "useful")
+        if not recipe: raise SystemExit("recipe not found")
+        print(f"{recipe.id}: confidence {recipe.confidence:.0%}")
+    elif command == "forget":
+        if not recipes.forget(recipe_id): raise SystemExit("recipe not found")
+        print(f"forgot {recipe_id}")
+    elif command == "edit":
+        steps = args[1:] or [s.strip() for s in input("Commands separated by ;; ").split(";;") if s.strip()]
+        recipe = recipes.edit(recipe_id, steps)
+        if not recipe: raise SystemExit("recipe not found")
+        print(f"updated {recipe_id}")
+
+
+def launch_ui() -> None:
+    try:
+        from .tui import run
+        run()
+    except ImportError:
+        raise SystemExit("recall ui requires the optional TUI: pip install 'supermemory-recall[tui]'")
+
+
 def me() -> None:
     """Print the auto-built profile of how you work (`recall me`)."""
     p = client.profile().get("profile", {})
@@ -231,20 +280,26 @@ def me() -> None:
 
 def main() -> None:
     raw = sys.argv[1:]
-    if not raw or raw[0] not in {"--help", "-h", "init", "doctor", "daemon"}:
-        pass
-    elif raw[0] in {"--help", "-h"}:
+    if raw[:1] and raw[0] in {"--help", "-h"}:
         usage()
         return
-    elif raw[0] == "init":
+    if raw[:1] == ["init"]:
         init_config()
         return
-    elif raw[0] == "doctor":
+    if raw[:1] == ["doctor"]:
         raise SystemExit(doctor())
-    elif raw[0] == "daemon":
+    if raw[:1] == ["daemon"]:
         daemon_command(raw[1] if len(raw) > 1 else "status")
         return
-
+    if raw[:1] == ["apply"]:
+        apply_recipe(" ".join(raw[1:])); return
+    if raw[:1] and raw[0] in {"useful", "wrong", "edit", "forget"}:
+        lifecycle(raw[0], raw[1:]); return
+    if raw[:1] == ["ui"]:
+        launch_ui(); return
+    json_output = "--json" in raw
+    if json_output:
+        sys.argv.remove("--json")
     args = [a for a in sys.argv[1:] if a != "--run"]
     do_run = "--run" in sys.argv[1:]
 
@@ -265,7 +320,10 @@ def main() -> None:
     except Exception as exc:
         raise SystemExit(f"recall: {exc}")
     log.info("search: query=%r -> %d result(s)", query[:120], len(results))
-    render(results)
+    if json_output:
+        print(json.dumps({"query": query, "results": results}, sort_keys=True))
+    else:
+        render(results)
 
 
 if __name__ == "__main__":
