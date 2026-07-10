@@ -234,13 +234,16 @@ def main() -> None:
     if not raw or raw[0] not in {"--help", "-h", "init", "doctor", "daemon"}:
         pass
     elif raw[0] in {"--help", "-h"}:
-        usage(); return
+        usage()
+        return
     elif raw[0] == "init":
-        init_config(); return
+        init_config()
+        return
     elif raw[0] == "doctor":
         raise SystemExit(doctor())
     elif raw[0] == "daemon":
-        daemon_command(raw[1] if len(raw) > 1 else "status"); return
+        daemon_command(raw[1] if len(raw) > 1 else "status")
+        return
 
     args = [a for a in sys.argv[1:] if a != "--run"]
     do_run = "--run" in sys.argv[1:]

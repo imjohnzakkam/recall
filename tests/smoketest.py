@@ -47,7 +47,7 @@ def main() -> None:
 
     print("1. connectivity check ...")
     try:
-        requests.get(f"{config.BASE}/", headers=config.HEADERS, timeout=5)
+        requests.get(f"{config.BASE}/", headers=config.headers(), timeout=5)
     except Exception as e:
         sys.exit(f"FAIL: cannot reach {config.BASE} ({e}). Is supermemory-server up?")
 

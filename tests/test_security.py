@@ -24,4 +24,5 @@ def test_destructive_approval_requires_run():
 if __name__ == "__main__":
     for name, fn in sorted(globals().copy().items()):
         if name.startswith("test_"):
-            fn(); print(f"ok  {name}")
+            fn()
+            print(f"ok  {name}")
