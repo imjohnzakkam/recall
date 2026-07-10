@@ -14,6 +14,7 @@ import json
 import os
 import re
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -59,7 +60,9 @@ def _load(path: Path) -> Optional[dict]:
 def _save(path: Path, data: dict) -> None:
     try:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data))
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data))
+        os.replace(tmp, path)
     except OSError as e:
         log.warning("could not write state %s: %s", path, e)
 
@@ -82,6 +85,13 @@ def record(
       candidate fix step. Failures older than ``STALE_SECONDS`` are dropped.
     """
     path = _state_path(cwd)
+    with _locked(path):
+        return _record_locked(path, command, cwd, exit_code, error_sig, git_ref)
+
+
+def _record_locked(
+    path: Path, command: str, cwd: str, exit_code: int, error_sig: str, git_ref: str,
+) -> Optional[Resolution]:
 
     if exit_code != 0:
         # a new (or repeated) failure opens/replaces the tracked one
@@ -117,3 +127,24 @@ def record(
     st["fix_candidates"] = fixes[-constants.MAX_FIX_CANDIDATES:]
     _save(path, st)
     return None
+
+
+@contextmanager
+def _locked(path: Path):
+    """Serialize updates for a cwd across concurrent shells on POSIX."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(".lock")
+    with open(lock_path, "a+") as lock:
+        try:
+            import fcntl
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            pass
+        try:
+            yield
+        finally:
+            try:
+                import fcntl
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            except (ImportError, OSError):
+                pass
