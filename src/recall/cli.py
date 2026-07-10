@@ -231,11 +231,13 @@ def apply_recipe(identifier: str) -> None:
     for command in recipe.steps:
         print("  " + theme.command(f"$ {command}"))
     if input("Run this recipe? [y/N] ").strip().lower() != "y":
-        print("aborted."); return
+        print("aborted.")
+        return
     worked = True
     for command in recipe.steps:
         if subprocess.run(command, shell=True).returncode:
-            worked = False; break
+            worked = False
+            break
     if worked and recipe.verify_command:
         worked = subprocess.run(recipe.verify_command, shell=True).returncode == 0
     recipes.feedback(recipe.id, worked)
@@ -248,15 +250,18 @@ def lifecycle(command: str, args: list[str]) -> None:
     recipe_id = args[0]
     if command in {"useful", "wrong"}:
         recipe = recipes.feedback(recipe_id, command == "useful")
-        if not recipe: raise SystemExit("recipe not found")
+        if not recipe:
+            raise SystemExit("recipe not found")
         print(f"{recipe.id}: confidence {recipe.confidence:.0%}")
     elif command == "forget":
-        if not recipes.forget(recipe_id): raise SystemExit("recipe not found")
+        if not recipes.forget(recipe_id):
+            raise SystemExit("recipe not found")
         print(f"forgot {recipe_id}")
     elif command == "edit":
         steps = args[1:] or [s.strip() for s in input("Commands separated by ;; ").split(";;") if s.strip()]
         recipe = recipes.edit(recipe_id, steps)
-        if not recipe: raise SystemExit("recipe not found")
+        if not recipe:
+            raise SystemExit("recipe not found")
         print(f"updated {recipe_id}")
 
 
@@ -292,11 +297,14 @@ def main() -> None:
         daemon_command(raw[1] if len(raw) > 1 else "status")
         return
     if raw[:1] == ["apply"]:
-        apply_recipe(" ".join(raw[1:])); return
+        apply_recipe(" ".join(raw[1:]))
+        return
     if raw[:1] and raw[0] in {"useful", "wrong", "edit", "forget"}:
-        lifecycle(raw[0], raw[1:]); return
+        lifecycle(raw[0], raw[1:])
+        return
     if raw[:1] == ["ui"]:
-        launch_ui(); return
+        launch_ui()
+        return
     json_output = "--json" in raw
     if json_output:
         sys.argv.remove("--json")
