@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from . import client, config, constants, recipes, security, theme
@@ -182,21 +183,55 @@ def init_config() -> None:
 
 def doctor() -> int:
     checks: list[tuple[str, bool, str]] = []
-    checks.append(("config directory", os.access(config.RECALL_DIR, os.W_OK), str(config.RECALL_DIR)))
-    checks.append(("RECALL_KEY", bool(config.KEY and config.KEY != "sm_..."), "run `recall init`, then edit ~/.recall/env"))
+    storage_ok = config.RECALL_DIR.is_dir() and os.access(config.RECALL_DIR, os.W_OK)
+    checks.append((
+        "local storage", storage_ok,
+        str(config.RECALL_DIR) if storage_ok else "run `recall init`",
+    ))
+    key_ok = bool(config.KEY and config.KEY != "sm_...")
+    checks.append((
+        "RECALL_KEY", key_ok,
+        "configured" if key_ok else "run `recall init`, then edit ~/.recall/env",
+    ))
+    shell_init = config.RECALL_DIR / "shell" / "init.zsh"
+    zshrc = Path("~/.zshrc").expanduser()
+    try:
+        zshrc_text = zshrc.read_text()
+    except OSError:
+        zshrc_text = ""
+    shell_ok = "init.zsh" in zshrc_text and "recall" in zshrc_text
+    checks.append((
+        "shell integration", shell_ok,
+        "source line found in ~/.zshrc" if shell_ok
+        else f"add `source {shell_init}` to ~/.zshrc",
+    ))
     from . import daemon
     running, pid = daemon.daemon_status()
     checks.append(("daemon", running, f"pid {pid}" if pid else "run `recall daemon start`"))
+    if key_ok:
+        try:
+            r = __import__("requests").post(
+                f"{config.BASE}{constants.PROFILE_PATH}", headers=config.headers(),
+                json={"containerTag": config.TAG}, timeout=2,
+            )
+            detail = config.BASE if r.ok else f"HTTP {r.status_code}: key rejected or API unavailable"
+            checks.append(("Supermemory auth", r.ok, detail))
+        except Exception as exc:
+            checks.append(("Supermemory auth", False, str(exc)))
+    else:
+        checks.append(("Supermemory auth", False, "configure RECALL_KEY first"))
+
+    ollama_base = os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
+    ollama_root = re.sub(r"/v1/?$", "", ollama_base.rstrip("/"))
+    required_model = os.environ.get("OPENAI_MODEL", "qwen3:8b")
     try:
-        r = __import__("requests").get(config.BASE, timeout=2)
-        checks.append(("Supermemory", r.status_code < 500, config.BASE))
+        r = __import__("requests").get(f"{ollama_root}/api/tags", timeout=2)
+        models = {item.get("name", "") for item in r.json().get("models", [])} if r.ok else set()
+        model_ok = required_model in models
+        detail = required_model if model_ok else f"run `ollama pull {required_model}`"
+        checks.append(("Ollama model", model_ok, detail))
     except Exception as exc:
-        checks.append(("Supermemory", False, str(exc)))
-    try:
-        r = __import__("requests").get("http://localhost:11434/api/tags", timeout=2)
-        checks.append(("Ollama", r.ok, "http://localhost:11434"))
-    except Exception as exc:
-        checks.append(("Ollama", False, str(exc)))
+        checks.append(("Ollama model", False, str(exc)))
     for name, ok, detail in checks:
         print(f"{'✓' if ok else '✗'} {name}: {detail}")
     return 0 if all(c[1] for c in checks) else 1

@@ -47,8 +47,19 @@ recall                            # search using the last captured failure
 recall "database unavailable"     # search by meaning
 recall --run                      # preview and confirm the top remembered fix
 recall me                         # summarize recurring terminal patterns
+recall apply "database unavailable" # review, run, and verify a local recipe
+recall useful fix_ab12            # record positive evidence
+recall wrong fix_ab12             # record negative evidence
+recall edit fix_ab12              # correct remembered steps
+recall forget fix_ab12            # remove a local recipe
+recall ui                          # optional keyboard-driven recipe browser
 r pytest -q                       # explicitly capture one command
 ```
+
+Install the optional TUI with `pipx inject supermemory-recall textual` or install the
+`tui` extra in a virtual environment. In the TUI, use `Ctrl+A` to apply, `Ctrl+C` to
+copy, `Ctrl+U`/`Ctrl+W` for feedback, `Ctrl+E` to edit, and `Ctrl+D` to forget the
+selected recipe.
 
 Ambient capture mirrors stderr only, leaving stdout attached to its TTY. Disable it with
 `export RECALL_AMBIENT=0`. Runtime data lives under `~/.recall/`.
