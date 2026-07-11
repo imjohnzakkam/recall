@@ -4,6 +4,8 @@
 
 Confirm `RECALL_BASE`, start `supermemory-server`, and check `~/.recall/logs/recall.log`.
 Every local request still requires the `sm_...` key printed on first boot.
+Run `recall doctor` to validate the key against Supermemory, confirm the configured Ollama
+model is installed, inspect the daemon, and check the packaged shell hook.
 
 ## Searches are empty
 
