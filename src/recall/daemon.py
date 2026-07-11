@@ -25,6 +25,8 @@ log = get_logger(__name__)
 
 POLL_SECONDS = 1.0
 TAIL_LINES = 40          # keep the last N lines of a failed command's stderr
+SESSION_RETENTION_SECONDS = 7 * 24 * 60 * 60
+CLEANUP_INTERVAL_SECONDS = 60
 
 
 def daemon_status() -> tuple[bool, int | None]:
@@ -132,10 +134,15 @@ def main() -> None:
             offsets[ctl] = ctl.stat().st_size
         except OSError:
             pass
+    last_cleanup = 0.0
     try:
         while True:
             for ctl in sorted(config.RECALL_DIR.glob("session.*.ctl")):
                 _drain(ctl, offsets, pending)
+            now = time.time()
+            if now - last_cleanup >= CLEANUP_INTERVAL_SECONDS:
+                cleanup_sessions(offsets, pending, now=now)
+                last_cleanup = now
             time.sleep(POLL_SECONDS)
     except (KeyboardInterrupt, SystemExit):
         log.info("ambient daemon stopped")
@@ -169,6 +176,35 @@ def _drain(ctl: Path, offsets: dict, pending: dict) -> None:
     for line in chunk.splitlines():
         if line:
             handle_line(ctl, line, pending)
+
+
+def cleanup_sessions(offsets: dict, pending: dict, *, now: float | None = None) -> int:
+    """Delete inactive session capture pairs older than the retention window."""
+    now = time.time() if now is None else now
+    removed = 0
+    controls = list(config.RECALL_DIR.glob("session.*.ctl"))
+    for ctl in controls:
+        log_path = _log_for(ctl)
+        paths = [path for path in (ctl, log_path) if path.exists()]
+        if not paths:
+            continue
+        try:
+            newest = max(path.stat().st_mtime for path in paths)
+        except OSError:
+            continue
+        if now - newest < SESSION_RETENTION_SECONDS:
+            continue
+        for path in paths:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        offsets.pop(ctl, None)
+        pending.pop(ctl, None)
+        removed += 1
+    if removed:
+        log.info("removed %d stale shell session capture(s)", removed)
+    return removed
 
 
 if __name__ == "__main__":
