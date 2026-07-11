@@ -56,13 +56,25 @@ def _connect() -> sqlite3.Connection:
 
 def create(
     problem: str, steps: list[str], *, verify_command: str = "", cwd: str = "",
-    source: str = "observed", recipe_id: Optional[str] = None,
+    source: str = "observed", recipe_id: Optional[str] = None, verified: bool = False,
 ) -> Recipe:
+    encoded_steps = json.dumps(list(steps))
+    with _connect() as db:
+        row = db.execute(
+            "SELECT * FROM recipes WHERE problem=? AND steps=? AND cwd=? LIMIT 1",
+            (problem, encoded_steps, cwd),
+        ).fetchone()
+    if row:
+        existing = _from_row(row)
+        return feedback(existing.id, True) if verified else existing
+
+    now = int(time.time())
     recipe = Recipe(
         id=recipe_id or "fix_" + uuid.uuid4().hex[:12], problem=problem,
         steps=list(steps), verify_command=verify_command, cwd=cwd,
         platform=platform.system().lower(), shell=Path(os.environ.get("SHELL", "")).name,
-        source=source, created_at=int(time.time()),
+        source=source, successes=1 if verified else 0, created_at=now,
+        last_verified=now if verified else 0,
     )
     with _connect() as db:
         db.execute(
@@ -100,18 +112,24 @@ def ranked(query: str, cwd: str = "") -> list[Recipe]:
 
 def feedback(recipe_id: str, worked: bool) -> Optional[Recipe]:
     now = int(time.time())
-    field = "successes" if worked else "failures"
     with _connect() as db:
-        db.execute(
-            f"UPDATE recipes SET {field}={field}+1, last_verified=? WHERE id=?",
-            (now, recipe_id),
-        )
+        if worked:
+            db.execute(
+                "UPDATE recipes SET successes=successes+1, last_verified=? WHERE id=?",
+                (now, recipe_id),
+            )
+        else:
+            db.execute("UPDATE recipes SET failures=failures+1 WHERE id=?", (recipe_id,))
     return get(recipe_id)
 
 
 def edit(recipe_id: str, steps: list[str]) -> Optional[Recipe]:
     with _connect() as db:
-        db.execute("UPDATE recipes SET steps=? WHERE id=?", (json.dumps(steps), recipe_id))
+        db.execute(
+            "UPDATE recipes SET steps=?, successes=0, failures=0, last_verified=0 "
+            "WHERE id=?",
+            (json.dumps(steps), recipe_id),
+        )
     return get(recipe_id)
 
 
