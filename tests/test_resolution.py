@@ -36,9 +36,10 @@ def test_links_fix_on_rerun_success():
     # re-running the failed command successfully closes the loop
     linked = state.record("docker compose up", cwd, 0, "")
     assert linked is not None
-    error_sig, fixes, _ref = linked
+    error_sig, fixes, _ref, verify_command = linked
     assert "8080" in error_sig
     assert fixes == ["lsof -ti :8080 | xargs kill -9"]
+    assert verify_command == "docker compose up"
 
 
 def test_no_link_without_candidates():
@@ -74,9 +75,10 @@ def test_new_failure_replaces_open_one():
     state.record("apply-fix", cwd, 0, "")      # candidate for the current (B) failure
     linked = state.record("cmd-b", cwd, 0, "")
     assert linked is not None
-    error_sig, fixes, _ref = linked
+    error_sig, fixes, _ref, verify_command = linked
     assert error_sig == "error B"              # paired with B, not the replaced A
     assert fixes == ["apply-fix"]
+    assert verify_command == "cmd-b"
 
 
 def main() -> None:

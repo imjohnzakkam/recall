@@ -31,9 +31,36 @@ def test_ranking_uses_query_and_context():
 def test_edit_and_forget():
     fresh_db()
     recipe = recipes.create("boom", ["old"])
+    recipes.feedback(recipe.id, True)
     assert recipes.edit(recipe.id, ["new"]).steps == ["new"]
+    assert recipes.get(recipe.id).successes == 0
     assert recipes.forget(recipe.id)
     assert recipes.get(recipe.id) is None
+
+
+def test_observed_recipe_is_verified_and_deduplicated():
+    fresh_db()
+    first = recipes.create(
+        "connection refused", ["start service"], verify_command="retry",
+        cwd="/work", verified=True,
+    )
+    assert first.successes == 1
+    assert first.verify_command == "retry"
+    second = recipes.create(
+        "connection refused", ["start service"], verify_command="retry",
+        cwd="/work", verified=True,
+    )
+    assert second.id == first.id
+    assert second.successes == 2
+
+
+def test_failed_feedback_does_not_refresh_last_verified():
+    fresh_db()
+    recipe = recipes.create("boom", ["fix"], verified=True)
+    verified_at = recipe.last_verified
+    updated = recipes.feedback(recipe.id, False)
+    assert updated.failures == 1
+    assert updated.last_verified == verified_at
 
 
 if __name__ == "__main__":
