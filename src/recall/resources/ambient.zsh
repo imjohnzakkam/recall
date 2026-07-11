@@ -1,11 +1,17 @@
 # Ambient zsh hooks bundled with supermemory-recall.
+# Canonical copy: src/recall/resources/ambient.zsh
 [[ "${RECALL_AMBIENT:-1}" == "0" ]] && return
 [[ -o interactive ]] || return
 export RECALL_LOG="$HOME/.recall/session.${RECALL_SESSION}.log"
 export RECALL_CTL="$HOME/.recall/session.${RECALL_SESSION}.ctl"
 mkdir -p "$HOME/.recall"
+RECALL_OLD_UMASK=$(umask)
+umask 077
 : > "$RECALL_LOG"
 : > "$RECALL_CTL"
+umask "$RECALL_OLD_UMASK"
+unset RECALL_OLD_UMASK
+chmod 600 "$RECALL_LOG" "$RECALL_CTL" 2>/dev/null
 exec 2> >(tee -a "$RECALL_LOG" >&2)
 
 recall_amb_preexec() {

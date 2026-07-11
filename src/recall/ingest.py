@@ -64,11 +64,19 @@ def ingest_failure(
 
 def ingest_resolution(
     error_sig: str, fix_commands: list[str], cwd: str, ref: str, session: str = "",
+    verify_command: str = "",
 ) -> dict:
     """Render and post a problem -> fix resolution document."""
     error_sig = redact.scrub(error_sig)
     fix_commands = [redact.scrub(c) for c in fix_commands]
+    verify_command = redact.scrub(verify_command)
     content = render.resolution_content(error_sig, fix_commands, cwd=cwd)
+    # Persist the local recipe before the network call so a temporary indexing
+    # outage cannot discard a fix that was already verified by a successful rerun.
+    recipes.create(
+        error_sig, fix_commands, verify_command=verify_command, cwd=cwd,
+        source="observed", verified=True,
+    )
     result = client.post_document(
         content,
         metadata={
@@ -79,9 +87,9 @@ def ingest_resolution(
             "ts": int(time.time()),
             # scalar-only metadata: join for `recall --run` to execute later
             "fix_commands": constants.FIX_CMD_DELIM.join(fix_commands),
+            "verify_command": verify_command[:constants.MAX_COMMAND_CHARS],
         },
     )
-    recipes.create(error_sig, fix_commands, cwd=cwd, source="observed")
     return result
 
 
@@ -133,8 +141,10 @@ def process_event(
     try:
         linked = state.record(command, cwd, exit_code, scrubbed, ref)
         if linked:
-            error_sig, fixes, link_ref = linked
-            resp = ingest_resolution(error_sig, fixes, cwd, link_ref, session)
+            error_sig, fixes, link_ref, verify_command = linked
+            resp = ingest_resolution(
+                error_sig, fixes, cwd, link_ref, session, verify_command,
+            )
             log.info(
                 "linked resolution: %d fix cmd(s) cwd=%s error=%r -> id=%s",
                 len(fixes), cwd, error_sig[:80], resp.get("id", "?"),

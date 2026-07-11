@@ -2,7 +2,9 @@
 import tempfile
 from pathlib import Path
 
-from recall import config, ingest
+import pytest
+
+from recall import config, ingest, recipes
 
 
 def _temp_recall_dir():
@@ -31,6 +33,23 @@ def test_empty_stderr_failure_is_ingested():
         assert "non-zero" in config.LAST_ERROR.read_text()
     finally:
         ingest.ingest_failure, ingest.state.record = old_ingest, old_record
+
+
+def test_resolution_recipe_survives_indexing_outage(monkeypatch):
+    root = _temp_recall_dir()
+    recipes.DB_PATH = root / "recipes.db"
+    monkeypatch.setattr(
+        ingest.client, "post_document",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("offline")),
+    )
+    with pytest.raises(RuntimeError, match="offline"):
+        ingest.ingest_resolution(
+            "service unavailable", ["start service"], "/work", "abc", "s", "retry",
+        )
+    saved = recipes.all_recipes()
+    assert len(saved) == 1
+    assert saved[0].verify_command == "retry"
+    assert saved[0].successes == 1
 
 
 if __name__ == "__main__":

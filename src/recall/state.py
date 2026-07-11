@@ -25,8 +25,8 @@ log = get_logger(__name__)
 
 STATE_DIR = config.RECALL_DIR / "state"
 
-# A resolution to ingest: (error signature, fix commands, git ref of the failure).
-Resolution = tuple[str, list[str], str]
+# A resolution to ingest: error, fix commands, failure git ref, verification command.
+Resolution = tuple[str, list[str], str, str]
 
 
 def _state_path(cwd: str) -> Path:
@@ -118,7 +118,10 @@ def _record_locked(
         fixes = st.get("fix_candidates", [])
         _clear(path)
         if fixes:
-            return st["error_sig"], fixes, st.get("git_ref", "")
+            return (
+                st["error_sig"], fixes, st.get("git_ref", ""),
+                st.get("failed_command", ""),
+            )
         return None
 
     # a different successful command — remember it as a candidate fix step

@@ -9,6 +9,10 @@ Remembered fixes are untrusted shell text. Always inspect commands before approv
 `recall --run`; a fix can be stale, project-specific, or destructive. Keep `~/.recall/env`
 mode `0600`, bind Supermemory to loopback, and never commit its API key.
 
+Per-shell stderr and control files are created with mode `0600`. The ambient daemon removes
+inactive session capture pairs after seven days; set `RECALL_AMBIENT=0` when raw terminal
+retention is inappropriate for a machine or project.
+
 To stop collection, set `RECALL_AMBIENT=0` or remove the shell integration. Delete
 `~/.recall` for Recall runtime state and use Supermemory's document deletion facilities for
 indexed memories.

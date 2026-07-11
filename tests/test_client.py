@@ -18,6 +18,7 @@ class Response:
 
 def test_search_request_contract(monkeypatch):
     seen = {}
+    monkeypatch.setattr(client.config, "KEY", "sm_test")
     monkeypatch.setattr(client.config, "TAG", "recall_test")
     def post(url, **kwargs):
         seen.update(url=url, **kwargs)

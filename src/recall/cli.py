@@ -11,6 +11,7 @@ Every call is to localhost — kill Wi-Fi and it still works.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -155,16 +156,14 @@ def run_top_fix(query: str) -> None:
     for c in commands:
         print("  " + theme.command(f"$ {c}") + theme.dim(f"  [{security.label(c)}]"))
 
-    for c in commands:
-        if not security.approve(c):
-            print(theme.dim("aborted."))
-            return
-        print(theme.dim(f"\n$ {c}"))
-        rc = subprocess.run(c, shell=True).returncode
-        if rc != 0:
-            print(theme.warn(f"stopped: `{c}` exited {rc}."))
-            return
-    print(theme.paint("✓ done — the remembered fix ran clean.", "fix", bold=True))
+    metadata = top.get("metadata") or {}
+    worked = execute_commands(
+        commands,
+        verify_command=metadata.get("verify_command", ""),
+        learned_cwd=metadata.get("cwd", ""),
+    )
+    if worked:
+        print(theme.paint("✓ done — the remembered fix ran clean.", "fix", bold=True))
 
 
 def init_config() -> None:
@@ -264,19 +263,57 @@ def apply_recipe(identifier: str) -> None:
         raise SystemExit("recall apply: no matching local recipe")
     print(theme.header(f"{recipe.id} · confidence {recipe.confidence:.0%}"))
     for command in recipe.steps:
-        print("  " + theme.command(f"$ {command}"))
-    if input("Run this recipe? [y/N] ").strip().lower() != "y":
-        print("aborted.")
+        print(
+            "  " + theme.command(f"$ {command}")
+            + theme.dim(f"  [{security.label(command)}]")
+        )
+    if recipe.verify_command:
+        print(theme.dim(f"  verify: $ {recipe.verify_command}"))
+    worked = execute_commands(
+        recipe.steps, verify_command=recipe.verify_command,
+        learned_cwd=recipe.cwd, shell=recipe.shell,
+    )
+    if worked is None:
         return
-    worked = True
-    for command in recipe.steps:
-        if subprocess.run(command, shell=True).returncode:
-            worked = False
-            break
-    if worked and recipe.verify_command:
-        worked = subprocess.run(recipe.verify_command, shell=True).returncode == 0
     recipes.feedback(recipe.id, worked)
     print("✓ verified" if worked else "✗ recipe failed")
+
+
+def execute_commands(
+    commands: list[str], *, verify_command: str = "", learned_cwd: str = "",
+    shell: str = "",
+) -> bool | None:
+    """Run untrusted remembered commands with context and per-command approval."""
+    current_cwd = os.getcwd()
+    if learned_cwd and os.path.abspath(learned_cwd) != os.path.abspath(current_cwd):
+        print(theme.warn(f"learned in {learned_cwd}; current directory is {current_cwd}."))
+        try:
+            if input("Continue in the current directory? [y/N] ").strip().lower() != "y":
+                print(theme.dim("aborted."))
+                return None
+        except (EOFError, KeyboardInterrupt):
+            return None
+
+    shell_path = shutil.which(shell) if shell else None
+    shell_path = shell_path or os.environ.get("SHELL") or "/bin/sh"
+    for command in commands:
+        if not security.approve(command):
+            print(theme.dim("aborted."))
+            return None
+        print(theme.dim(f"\n$ {command}"))
+        rc = subprocess.run([shell_path, "-lc", command]).returncode
+        if rc != 0:
+            print(theme.warn(f"stopped: `{command}` exited {rc}."))
+            return False
+
+    if verify_command:
+        print(theme.header("verify the remembered fix:"))
+        print("  " + theme.command(f"$ {verify_command}"))
+        if not security.approve(verify_command):
+            print(theme.dim("verification aborted."))
+            return None
+        return subprocess.run([shell_path, "-lc", verify_command]).returncode == 0
+    return True
 
 
 def lifecycle(command: str, args: list[str]) -> None:
