@@ -6,6 +6,7 @@ ingest.process_event. Run directly or under pytest.
 """
 import os
 import tempfile
+import time
 from pathlib import Path
 
 os.environ.setdefault("RECALL_BASE", "http://localhost:6767")
@@ -86,6 +87,30 @@ def test_exit_without_pending_cmd_is_ignored():
         assert calls == []
     finally:
         daemon.ingest.process_event = orig
+
+
+def test_cleanup_sessions_removes_only_stale_capture_pairs():
+    root = Path(tempfile.mkdtemp())
+    old_dir = daemon.config.RECALL_DIR
+    daemon.config.RECALL_DIR = root
+    try:
+        stale_ctl = root / "session.1.ctl"
+        stale_log = root / "session.1.log"
+        fresh_ctl = root / "session.2.ctl"
+        fresh_log = root / "session.2.log"
+        for path in (stale_ctl, stale_log, fresh_ctl, fresh_log):
+            path.write_text("x")
+        old = time.time() - daemon.SESSION_RETENTION_SECONDS - 1
+        os.utime(stale_ctl, (old, old))
+        os.utime(stale_log, (old, old))
+        offsets = {stale_ctl: 1, fresh_ctl: 1}
+        pending = {stale_ctl: {}, fresh_ctl: {}}
+        assert daemon.cleanup_sessions(offsets, pending) == 1
+        assert not stale_ctl.exists() and not stale_log.exists()
+        assert fresh_ctl.exists() and fresh_log.exists()
+        assert stale_ctl not in offsets and stale_ctl not in pending
+    finally:
+        daemon.config.RECALL_DIR = old_dir
 
 
 def main() -> None:

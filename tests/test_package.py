@@ -12,6 +12,19 @@ def test_shell_resources_are_packaged():
     assert root.joinpath("ambient.zsh").is_file()
 
 
+def test_checkout_shell_files_match_packaged_resources():
+    repo = Path(__file__).parents[1]
+    resources = files("recall.resources")
+    for name in ("init.zsh", "ambient.zsh"):
+        assert (repo / "shell" / name).read_text() == resources.joinpath(name).read_text()
+
+
+def test_packaged_init_starts_daemon():
+    text = files("recall.resources").joinpath("init.zsh").read_text()
+    assert '"$RECALL_BIN/recall" daemon start' in text
+    assert "umask 077" in files("recall.resources").joinpath("ambient.zsh").read_text()
+
+
 def test_installer_writes_shell_and_private_env():
     root = Path(tempfile.mkdtemp()) / "shell"
     init = installer.install(root)
